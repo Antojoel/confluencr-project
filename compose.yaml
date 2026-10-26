@@ -1,0 +1,59 @@
+services:
+  db:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: ledger
+      POSTGRES_PASSWORD: ledger
+      POSTGRES_DB: ledger
+    ports:
+      - '5432:5432'
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./docker/init-test-db.sql:/docker-entrypoint-initdb.d/init-test-db.sql:ro
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U ledger -d ledger']
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  api:
+    build:
+      context: .
+      target: runtime
+    environment:
+      PORT: 3000
+      DATABASE_URL: postgres://ledger:ledger@db:5432/ledger
+    ports:
+      - '3000:3000'
+    depends_on:
+      db:
+        condition: service_healthy
+
+  # Lint, type-check and integration tests: `docker compose run --rm check`
+  check:
+    profiles: ['tools']
+    build:
+      context: .
+      target: dev
+    environment:
+      DATABASE_URL: postgres://ledger:ledger@db:5432/ledger_test
+    command: npm run check
+    depends_on:
+      db:
+        condition: service_healthy
+
+  # End-to-end tests against the running api container: `docker compose --profile tools run --rm e2e`
+  e2e:
+    profiles: ['tools']
+    build:
+      context: .
+      target: dev
+    environment:
+      API_URL: http://api:3000
+    command: npm run test:e2e
+    depends_on:
+      api:
+        condition: service_healthy
+
+volumes:
+  pgdata:
